@@ -67,6 +67,7 @@ class CallbackView(View):
         ).hexdigest()
         auth_date = int(data.pop("auth_date"))
         auth_date_validity = provider.get_auth_date_validity()
+        print(f'Hash:{hash} and expected hash: {expected_hash}')
         # if hash != expected_hash or time.time() - auth_date > auth_date_validity:
         #     return render_authentication_error(
         #         request,
