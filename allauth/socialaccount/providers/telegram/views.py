@@ -74,6 +74,12 @@ class CallbackView(View):
         #         provider=provider,
         #         extra_context={"response": data, "state_id": state_id},
         #     )
+        if time.time() - auth_date > auth_date_validity:
+            return render_authentication_error(
+                request,
+                provider=provider,
+                extra_context={"response": data, "state_id": state_id},
+            )
         login = provider.sociallogin_from_response(request, data)
         login.state = provider.unstash_redirect_state(request, state_id)
         return complete_social_login(request, login)
