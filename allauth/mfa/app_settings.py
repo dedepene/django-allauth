@@ -23,6 +23,13 @@ class AppSettings:
         return self._setting("RECOVERY_CODE_COUNT", 10)
 
     @property
+    def RECOVERY_CODE_DIGITS(self):
+        """
+        The number of digits of each recovery code.
+        """
+        return self._setting("RECOVERY_CODE_DIGITS", 8)
+
+    @property
     def TOTP_PERIOD(self):
         """
         The period that a TOTP code will be valid for, in seconds.
@@ -57,6 +64,13 @@ class AppSettings:
                 "MFA_TOTP_INSECURE_BYPASS_CODE is for testing purposes only"
             )
         return code
+
+    @property
+    def TOTP_TOLERANCE(self):
+        """
+        The number of time steps in the past or future to allow. Lower values are more secure, but more likely to fail due to clock drift.
+        """
+        return self._setting("TOTP_TOLERANCE", 0)
 
     @property
     def SUPPORTED_TYPES(self):

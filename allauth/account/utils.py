@@ -1,10 +1,9 @@
 import unicodedata
 from collections import OrderedDict
-from typing import Optional
+from typing import List, Optional
 
 from django.conf import settings
 from django.contrib.auth import REDIRECT_FIELD_NAME, get_user_model
-from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.db.models import Q
 from django.utils.encoding import force_str
@@ -13,6 +12,7 @@ from django.utils.http import base36_to_int, int_to_base36
 from allauth.account import app_settings
 from allauth.account.adapter import get_adapter
 from allauth.account.internal import flows
+from allauth.account.internal.userkit import user_field
 from allauth.account.models import Login
 from allauth.core.internal import httpkit
 from allauth.utils import (
@@ -80,33 +80,6 @@ def user_display(user) -> str:
         f = getattr(settings, "ACCOUNT_USER_DISPLAY", default_user_display)
         _user_display_callable = import_callable(f)
     return _user_display_callable(user)
-
-
-def user_field(user, field, *args, commit=False):
-    """
-    Gets or sets (optional) user model fields. No-op if fields do not exist.
-    """
-    if not field:
-        return
-    User = get_user_model()
-    try:
-        field_meta = User._meta.get_field(field)
-        max_length = field_meta.max_length
-    except FieldDoesNotExist:
-        if not hasattr(user, field):
-            return
-        max_length = None
-    if args:
-        # Setter
-        v = args[0]
-        if v:
-            v = v[0:max_length]
-        setattr(user, field, v)
-        if commit:
-            user.save(update_fields=[field])
-    else:
-        # Getter
-        return getattr(user, field)
 
 
 def user_username(user, *args, commit=False):
@@ -326,7 +299,7 @@ def filter_users_by_username(*username):
 
 def filter_users_by_email(
     email: str, is_active: Optional[bool] = None, prefer_verified: bool = False
-):
+) -> List:
     """Return list of users by email address
 
     Typically one, at most just a few in length.  First we look through
@@ -357,7 +330,7 @@ def filter_users_by_email(
     if app_settings.USER_MODEL_EMAIL_FIELD and not is_verified:
         q_dict = {app_settings.USER_MODEL_EMAIL_FIELD: email}
         user_qs = User.objects.filter(**q_dict)
-        for user in user_qs.iterator():
+        for user in user_qs.iterator(2000):
             user_email = getattr(user, app_settings.USER_MODEL_EMAIL_FIELD)
             if _unicode_ci_compare(user_email, email):
                 users.append(user)

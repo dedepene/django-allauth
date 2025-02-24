@@ -13,8 +13,10 @@ stdenv.mkDerivation {
         python311Packages.django-stubs
         python311Packages.types-requests
         python311Packages.django
+        python311Packages.djangorestframework
         python311Packages.flake8
         python311Packages.debugpy
+        python311Packages.django-ninja
         python311Packages.pycodestyle
         python311Packages.pyls-flake8
         python311Packages.pylsp-rope
@@ -26,6 +28,7 @@ stdenv.mkDerivation {
         python311Packages.python3-openid
         python311Packages.python3-saml
         python311Packages.pyjwt
+        python311Packages.psycopg
         python311Packages.qrcode
         python311Packages.sphinx-rtd-theme
         python311Packages.requests-oauthlib

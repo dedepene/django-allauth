@@ -1,10 +1,17 @@
+from http import HTTPStatus
+
 from django.utils.decorators import method_decorator
 
 from allauth.account import app_settings as account_settings
 from allauth.account.adapter import get_adapter as get_account_adapter
 from allauth.account.internal import flows
-from allauth.account.internal.flows import password_change, password_reset
-from allauth.account.models import EmailAddress
+from allauth.account.internal.flows import (
+    email_verification,
+    manage_email,
+    password_change,
+    password_reset,
+    password_reset_by_code,
+)
 from allauth.account.stages import EmailVerificationStage, LoginStageController
 from allauth.account.utils import send_email_confirmation
 from allauth.core import ratelimit
@@ -42,8 +49,10 @@ class RequestLoginCodeView(APIView):
     input_class = RequestLoginCodeInput
 
     def post(self, request, *args, **kwargs):
-        flows.login_by_code.request_login_code(
-            self.request, self.input.cleaned_data["email"]
+        flows.login_by_code.LoginCodeVerificationProcess.initiate(
+            request=self.request,
+            user=self.input._user,
+            email=self.input.cleaned_data["email"],
         )
         return AuthenticationResponse(self.request)
 
@@ -56,26 +65,24 @@ class ConfirmLoginCodeView(APIView):
         self.stage = auth_status.get_pending_stage()
         if not self.stage:
             return ConflictResponse(request)
-        self.user, self.pending_login = flows.login_by_code.get_pending_login(
-            request, self.stage.login, peek=True
+        self.process = flows.login_by_code.LoginCodeVerificationProcess.resume(
+            self.stage
         )
-        if not self.pending_login:
+        if not self.process:
             return ConflictResponse(request)
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
-        flows.login_by_code.perform_login_by_code(self.request, self.stage, None)
-        return AuthenticationResponse(request)
+        response = self.process.finish(None)
+        return AuthenticationResponse.from_response(request, response)
 
     def get_input_kwargs(self):
         kwargs = super().get_input_kwargs()
-        kwargs["code"] = (
-            self.pending_login.get("code", "") if self.pending_login else ""
-        )
+        kwargs["code"] = self.process.code
         return kwargs
 
     def handle_invalid_input(self, input):
-        flows.login_by_code.record_invalid_attempt(self.request, self.stage.login)
+        self.process.record_invalid_attempt()
         return super().handle_invalid_input(input)
 
 
@@ -87,8 +94,10 @@ class LoginView(APIView):
         if request.user.is_authenticated:
             return ConflictResponse(request)
         credentials = self.input.cleaned_data
-        flows.login.perform_password_login(request, credentials, self.input.login)
-        return AuthenticationResponse(self.request)
+        response = flows.login.perform_password_login(
+            request, credentials, self.input.login
+        )
+        return AuthenticationResponse.from_response(request, response)
 
 
 @method_decorator(rate_limit(action="signup"), name="handle")
@@ -104,12 +113,12 @@ class SignupView(APIView):
         user, resp = self.input.try_save(request)
         if not resp:
             try:
-                flows.signup.complete_signup(
+                resp = flows.signup.complete_signup(
                     request, user=user, by_passkey=self.by_passkey
                 )
             except ImmediateHttpResponse:
                 pass
-        return AuthenticationResponse(request)
+        return AuthenticationResponse.from_response(request, resp)
 
 
 class SessionView(APIView):
@@ -127,47 +136,58 @@ class VerifyEmailView(APIView):
 
     def handle(self, request, *args, **kwargs):
         self.stage = LoginStageController.enter(request, EmailVerificationStage.key)
-        if not self.stage and account_settings.EMAIL_VERIFICATION_BY_CODE_ENABLED:
+        if (
+            not self.stage
+            and account_settings.EMAIL_VERIFICATION_BY_CODE_ENABLED
+            and not request.user.is_authenticated
+        ):
             return ConflictResponse(request)
-        return super().handle(request, *args, **kwargs)
-
-    def handle_invalid_input(self, input: VerifyEmailInput):
-        self._record_invalid_attempt()
-        return super().handle_invalid_input(input)
-
-    def _record_invalid_attempt(self) -> None:
+        self.process = None
         if account_settings.EMAIL_VERIFICATION_BY_CODE_ENABLED:
-            _, pending_verification = (
-                flows.email_verification_by_code.get_pending_verification(
-                    self.request, peek=True
+            self.process = (
+                flows.email_verification_by_code.EmailVerificationProcess.resume(
+                    request
                 )
             )
-            if pending_verification:
-                flows.email_verification_by_code.record_invalid_attempt(
-                    self.request, pending_verification
-                )
+            if not self.process:
+                return ConflictResponse(request)
+        return super().handle(request, *args, **kwargs)
+
+    def get_input_kwargs(self):
+        return {"process": self.process}
+
+    def handle_invalid_input(self, input: VerifyEmailInput):
+        if self.process:
+            self.process.record_invalid_attempt()
+        return super().handle_invalid_input(input)
 
     def get(self, request, *args, **kwargs):
         key = request.headers.get("x-email-verification-key", "")
-        input = self.input_class({"key": key})
+        input = self.input_class({"key": key}, process=self.process)
         if not input.is_valid():
-            self._record_invalid_attempt()
+            self.process.record_invalid_attempt()
             return ErrorResponse(request, input=input)
-        verification = input.cleaned_data["key"]
-        return response.VerifyEmailResponse(request, verification, stage=self.stage)
+        if self.process:
+            email_address = self.process.email_address
+        else:
+            email_address = input.verification.email_address
+        return response.VerifyEmailResponse(request, email_address, stage=self.stage)
 
     def post(self, request, *args, **kwargs):
-        confirmation = self.input.cleaned_data["key"]
-        email_address = confirmation.confirm(request)
+        if self.process:
+            email_address = self.process.finish()
+        else:
+            email_address = self.input.verification.confirm(request)
         if not email_address:
             # Should not happen, VerifyInputInput should have verified all
             # preconditions.
-            return APIResponse(request, status=500)
+            return APIResponse(request, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        response = None
         if self.stage:
-            # Verifying email as part of login/signup flow, so emit a
-            # authentication status response.
-            self.stage.exit()
-        return AuthenticationResponse(request)
+            # Verifying email as part of login/signup flow may imply the user is
+            # to be logged in...
+            response = email_verification.login_on_verification(request, email_address)
+        return AuthenticationResponse.from_response(request, response)
 
 
 class RequestPasswordResetView(APIView):
@@ -182,6 +202,8 @@ class RequestPasswordResetView(APIView):
         if r429:
             return r429
         self.input.save(request)
+        if account_settings.PASSWORD_RESET_BY_CODE_ENABLED:
+            return AuthenticationResponse(request)
         return response.RequestPasswordResponse(request)
 
 
@@ -189,18 +211,52 @@ class RequestPasswordResetView(APIView):
 class ResetPasswordView(APIView):
     input_class = ResetPasswordInput
 
+    def handle_invalid_input(self, input: ResetPasswordInput):
+        if self.process and "key" in input.errors:
+            self.process.record_invalid_attempt()
+        return super().handle_invalid_input(input)
+
+    def handle(self, request, *args, **kwargs):
+        self.process = None
+        if account_settings.PASSWORD_RESET_BY_CODE_ENABLED:
+            self.process = (
+                password_reset_by_code.PasswordResetVerificationProcess.resume(
+                    self.request
+                )
+            )
+            if not self.process:
+                return ConflictResponse(request)
+        return super().handle(request, *args, **kwargs)
+
     def get(self, request, *args, **kwargs):
         key = request.headers.get("X-Password-Reset-Key", "")
-        input = ResetPasswordKeyInput({"key": key})
-        if not input.is_valid():
-            return ErrorResponse(request, input=input)
-        return response.PasswordResetKeyResponse(request, input.user)
+        if self.process:
+            input = ResetPasswordKeyInput({"key": key}, code=self.process.code)
+            if not input.is_valid():
+                self.process.record_invalid_attempt()
+                return ErrorResponse(request, input=input)
+            self.process.confirm_code()
+            return response.PasswordResetKeyResponse(request, self.process.user)
+        else:
+            input = ResetPasswordKeyInput({"key": key})
+            if not input.is_valid():
+                return ErrorResponse(request, input=input)
+            return response.PasswordResetKeyResponse(request, input.user)
+
+    def get_input_kwargs(self):
+        ret = {}
+        if self.process:
+            ret.update({"code": self.process.code, "user": self.process.user})
+        return ret
 
     def post(self, request, *args, **kwargs):
-        flows.password_reset.reset_password(
-            self.input.user, self.input.cleaned_data["password"]
-        )
-        password_reset.finalize_password_reset(request, self.input.user)
+        user = self.input.user
+        flows.password_reset.reset_password(user, self.input.cleaned_data["password"])
+        if self.process:
+            self.process.confirm_code()
+            self.process.finish()
+        else:
+            password_reset.finalize_password_reset(request, user)
         return AuthenticationResponse(self.request)
 
 
@@ -236,7 +292,7 @@ class ManageEmailView(AuthenticatedAPIView):
         return self._respond_email_list()
 
     def _respond_email_list(self):
-        addrs = EmailAddress.objects.filter(user=self.request.user)
+        addrs = manage_email.list_email_addresses(self.request, self.request.user)
         return response.EmailAddressesResponse(self.request, addrs)
 
     def post(self, request, *args, **kwargs):

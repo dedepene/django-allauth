@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from django.contrib import messages
 from django.http import HttpRequest
@@ -171,3 +171,19 @@ def assess_unique_email(email) -> Optional[bool]:
         # to be unique. In this case, uniqueness takes precedence over
         # enumeration prevention.
         return False
+
+
+def list_email_addresses(request, user) -> List[EmailAddress]:
+    addresses = list(EmailAddress.objects.filter(user=user))
+    if app_settings.EMAIL_VERIFICATION_BY_CODE_ENABLED:
+        from allauth.account.internal.flows.email_verification_by_code import (
+            EmailVerificationProcess,
+        )
+
+        process = EmailVerificationProcess.resume(request)
+        if process:
+            email_address = process.email_address
+            if email_address.user_id == user.pk:
+                addresses.append(email_address)
+
+    return addresses

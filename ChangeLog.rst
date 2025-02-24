@@ -1,3 +1,111 @@
+65.5.0 (unreleased)
+*******************
+
+Note worthy changes
+-------------------
+
+- Added support for resetting passwords by code, instead of a link.
+
+- Simplified signup form configuration. The following settings all controlled
+  signup form: ``ACCOUNT_EMAIL_REQUIRED``, ``ACCOUNT_USERNAME_REQUIRED``,
+  ``ACCOUNT_SIGNUP_EMAIL_ENTER_TWICE``, ``ACCOUNT_SIGNUP_PASSWORD_ENTER_TWICE``.
+  This setup had its issues. For example, when email was not required it was
+  still available as an optional field, whereas the username field disappeared
+  when not required. Also, for future phone/SMS support, additional settings
+  would be required.  The settings are now all deprecated, and replaced by one
+  new setting: ``ACCOUNT_SIGNUP_FIELDS``, which can be configured to
+  e.g. ``['username*', 'email', 'password1*', 'password2*']`` to indicate which
+  fields are present and required (``'*'``). This change is performed in a
+  backwards compatible manner.
+
+- Headless: if, while signing up using a third-party provider account, there is
+  insufficient information received from the provider to automatically complete
+  the signup process, an additional step is needed to complete the missing data
+  before the user is fully signed up and authenticated.  You can now perform a
+  ``GET`` request to ``/_allauth/{client}/v1/auth/provider/signup`` to obtain
+  information on the pending signup.
+
+
+Fixes
+-----
+
+- Headless: In case you had multiple apps of the same provider configured,
+  you could run into a ``MultipleObjectsReturned``. Fixed.
+
+
+65.4.1 (2025-02-07)
+*******************
+
+Fixes
+-----
+
+- To make way for a future ``"phone"`` method, ``AUTHENTICATION_METHOD`` was
+  removed in favor of a new ``LOGIN_METHODS``. While this change was done in a
+  backwards compatible manner within allauth scope, other packages accessing
+  ``allauth.account.app_settings.AUTHENTICATION_METHOD`` would break. Fixed.
+
+
+65.4.0 (2025-02-06)
+*******************
+
+Note worthy changes
+-------------------
+
+- The setting ``ACCOUNT_AUTHENTICATION_METHOD: str`` (with values
+  ``"username"``, ``"username_email"``, ``"email"``) has been replaced by
+  ``ACCOUNT_LOGIN_METHODS: set[str]``. which is a set of values including
+  ``"username"`` or ``"email"``. This change is performed in a backwards
+  compatible manner.
+
+- Headless: when ``HEADLESS_SERVE_SPECIFICATION`` is set to ``True``, the API
+  specification will be served dynamically, over at
+  ``/_allauth/openapi.(yaml|json|html)``.  The
+  ``HEADLESS_SPECIFICATION_TEMPLATE_NAME`` can be configured to choose between
+  Redoc (``"headless/spec/redoc_cdn.html"``) and Swagger (
+  (``"headless/spec/swagger_cdn.html"``).
+
+- Headless: added a new setting, ``HEADLESS_CLIENTS`` which you can use to limit
+  the types of API clients (app/browser).
+
+- Headless: expanded the React SPA example to showcase integration with
+  Django Ninja as well as Django REST framework.
+
+- Headless: added out of the box support for being able to use the headless
+  session tokens with Django Ninja and Django REST framework.
+
+
+65.3.1 (2024-12-25)
+*******************
+
+Fixes
+-----
+
+- Headless: When using email verification by code, you could incorrectly
+  encounter a 409 when attempting to add a new email address while logged in.
+
+- Headless: In contrast to the headed version, it was possible to remove the
+  last 3rd party account from a user that has no usable password. Fixed.
+
+- Headless: The setting ``ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION`` was not respected,
+  and always assumed to be ``True``.
+
+
+65.3.0 (2024-11-30)
+*******************
+
+Note worthy changes
+-------------------
+
+- Added support for TOTP code tolerance (see ``MFA_TOTP_TOLERANCE``).
+
+
+Security notice
+---------------
+
+- Authentication by email/password was vulnerable to account enumeration by
+  means of a timing attack. Thanks to Julie Rymer for the report and the patch.
+
+
 65.2.0 (2024-11-08)
 *******************
 

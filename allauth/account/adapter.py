@@ -35,7 +35,10 @@ from allauth import app_settings as allauth_app_settings
 from allauth.account import app_settings, signals
 from allauth.core import context, ratelimit
 from allauth.core.internal.adapter import BaseAdapter
-from allauth.core.internal.httpkit import headed_redirect_response
+from allauth.core.internal.httpkit import (
+    headed_redirect_response,
+    is_headless_request,
+)
 from allauth.utils import generate_unique_username, import_attribute
 
 
@@ -112,10 +115,7 @@ class DefaultAccountAdapter(BaseAdapter):
             .exclude(pk=email_address.pk)
             .exists()
         )
-        login_by_email = (
-            app_settings.AUTHENTICATION_METHOD
-            == app_settings.AuthenticationMethod.EMAIL
-        )
+        login_by_email = app_settings.LOGIN_METHODS == {app_settings.LoginMethod.EMAIL}
         if email_address.primary:
             if has_other:
                 # Don't allow, let the user mark one of the others as primary
@@ -191,16 +191,21 @@ class DefaultAccountAdapter(BaseAdapter):
             msg.content_subtype = "html"  # Main content is now text/html
         return msg
 
-    def send_mail(self, template_prefix, email, context):
+    def send_mail(self, template_prefix: str, email: str, context: dict) -> None:
+        request = globals()["context"].request
         ctx = {
+            "request": request,
             "email": email,
-            "current_site": get_current_site(globals()["context"].request),
+            "current_site": get_current_site(request),
         }
         ctx.update(context)
         msg = self.render_mail(template_prefix, email, ctx)
         msg.send()
 
     def get_signup_redirect_url(self, request):
+        """
+        Returns the default URL to redirect to directly after signing up.
+        """
         return resolve_url(app_settings.SIGNUP_REDIRECT_URL)
 
     def get_login_redirect_url(self, request):
@@ -383,7 +388,7 @@ class DefaultAccountAdapter(BaseAdapter):
         Wrapper of `django.contrib.messages.add_message`, that reads
         the message text from a template.
         """
-        if getattr(getattr(request, "allauth", None), "headless", None):
+        if is_headless_request(request):
             return
         if "django.contrib.messages" in settings.INSTALLED_APPS:
             if message:
@@ -477,9 +482,14 @@ class DefaultAccountAdapter(BaseAdapter):
     ):
         from .utils import get_login_redirect_url
 
-        response = HttpResponseRedirect(
-            get_login_redirect_url(request, redirect_url, signup=signup)
-        )
+        if is_headless_request(request):
+            from allauth.headless.base.response import AuthenticationResponse
+
+            response = AuthenticationResponse(request)
+        else:
+            response = HttpResponseRedirect(
+                get_login_redirect_url(request, redirect_url, signup=signup)
+            )
 
         if signal_kwargs is None:
             signal_kwargs = {}
@@ -601,7 +611,7 @@ class DefaultAccountAdapter(BaseAdapter):
     def should_send_confirmation_mail(self, request, email_address, signup) -> bool:
         return True
 
-    def send_account_already_exists_mail(self, email):
+    def send_account_already_exists_mail(self, email: str) -> None:
         from allauth.account.internal import flows
 
         signup_url = flows.signup.get_signup_url(context.request)
@@ -609,7 +619,6 @@ class DefaultAccountAdapter(BaseAdapter):
             context.request
         )
         ctx = {
-            "request": context.request,
             "signup_url": signup_url,
             "password_reset_url": password_reset_url,
         }
@@ -788,18 +797,24 @@ class DefaultAccountAdapter(BaseAdapter):
         """
         return self._generate_code()
 
+    def generate_password_reset_code(self) -> str:
+        """
+        Generates a new password reset code.
+        """
+        return self._generate_code(length=8)
+
     def generate_email_verification_code(self) -> str:
         """
         Generates a new email verification code.
         """
         return self._generate_code()
 
-    def _generate_code(self):
+    def _generate_code(self, length=6):
         forbidden_chars = "0OI18B2ZAEU"
         allowed_chars = string.ascii_uppercase + string.digits
         for ch in forbidden_chars:
             allowed_chars = allowed_chars.replace(ch, "")
-        return get_random_string(length=6, allowed_chars=allowed_chars)
+        return get_random_string(length=length, allowed_chars=allowed_chars)
 
     def is_login_by_code_required(self, login) -> bool:
         """

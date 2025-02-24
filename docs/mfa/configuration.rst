@@ -32,6 +32,9 @@ Available settings:
 ``MFA_RECOVERY_CODE_COUNT`` (default: ``10``)
   The number of recovery codes.
 
+``MFA_RECOVERY_CODE_DIGITS`` (default: ``8``)
+  The number of digits of each recovery code.
+
 ``MFA_SUPPORTED_TYPES`` (default: ``[["recovery_codes", "totp"]``)
   The authenticator types that end users are able to setup. Allowed
   types are: ``"recovery_codes"``, ``"totp"``, and ``"webauthn"``. The
@@ -39,6 +42,9 @@ Available settings:
 
 ``MFA_TOTP_PERIOD`` (default: ``30``)
   The period that a TOTP code will be valid for, in seconds.
+
+``MFA_TOTP_TOLERANCE`` (default: ``0``)
+  The number of time steps in the past or future to allow. Lower values are more secure, but more likely to fail due to clock drift.
 
 ``MFA_TOTP_DIGITS`` (default: ``6``)
   The number of digits for TOTP codes.
