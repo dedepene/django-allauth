@@ -1,12 +1,12 @@
 from allauth.socialaccount.providers.oauth2.views import OAuth2Adapter, OAuth2LoginView, OAuth2CallbackView
-from allauth.socialaccount.providers.olx.provider import OLXProvider
+#from allauth.socialaccount.providers.olx.provider import OLXProvider
 from allauth.socialaccount.helpers import complete_social_login
 from allauth.socialaccount.models import SocialLogin, SocialToken
 from allauth.account.models import EmailAddress
 import requests
 
 class OLXOAuth2Adapter(OAuth2Adapter):
-    provider_id = OLXProvider.id
+    provider_id = "olx"
     access_token_url = 'https://www.olx.bg/api/open/oauth/token'
     authorize_url = 'https://www.olx.bg/api/open/oauth/authorize'
     profile_url = 'https://www.olx.bg/api/open/v2/users/me'
