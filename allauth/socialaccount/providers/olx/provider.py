@@ -1,12 +1,14 @@
 from allauth.socialaccount.providers.oauth2.provider import OAuth2Provider
 from allauth.socialaccount.models import SocialAccount, SocialLogin, SocialToken
 from allauth.account.models import EmailAddress
+from allauth.socialaccount.providers.olx.views import OLXOAuth2Adapter
 
 
 class OLXProvider(OAuth2Provider):
     id = 'olx'
     name = 'OLX'
     account_class = SocialAccount
+    oauth2_adapter_class = OLXOAuth2Adapter
 
     def extract_uid(self, data):
         return str(data['id'])
