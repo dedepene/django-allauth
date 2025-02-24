@@ -11,7 +11,7 @@ class OLXProvider(OAuth2Provider):
     id = 'olx'
     name = 'OLX'
     account_class = OlxAccount
-    oauth2_adapter_class = OLXOAuth2Adapter
+    #oauth2_adapter_class = OLXOAuth2Adapter
 
     def extract_uid(self, data):
         return str(data['id'])
