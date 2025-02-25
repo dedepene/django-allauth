@@ -8,7 +8,7 @@ import requests
 class OLXOAuth2Adapter(OAuth2Adapter):
     provider_id = "olx"
     access_token_url = 'https://www.olx.bg/api/open/oauth/token'
-    authorize_url = 'https://www.olx.bg/api/oauth/authorize'
+    authorize_url = 'https://www.olx.bg/oauth/authorize'
     profile_url = 'https://www.olx.bg/api/open/v2/users/me'
 
     def complete_login(self, request, app, token, **kwargs):
